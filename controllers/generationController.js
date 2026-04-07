@@ -99,10 +99,8 @@ async function createGeneration(req, res, next) {
 
     console.log("Supabase Upload Complete. Sending Request to Seedance API...");
 
-    // Save internal paths for DB storage so we can still display local files in UI
-    const imagesPaths = imageFiles.map((f) => `/uploads/images/${f.filename}`);
-    const videoPaths = videoFileUploads.map((f) => `/uploads/video/${f.filename}`);
-    const audioPaths = audioFileUploads.map((f) => `/uploads/audio/${f.filename}`);
+    // We will save the actual Supabase PUBLIC URLS into the database so the frontend can read them reliably forever 
+    // even if the Render backend disk is wiped.
 
     // Call Seedance API with public Supabase URLs
     const apiResponse = await seedance.generateVideo({
@@ -122,9 +120,9 @@ async function createGeneration(req, res, next) {
       data: {
         requestId,
         prompt: prompt.trim(),
-        imagesList: imagesPaths, 
-        videoFiles: videoPaths,
-        audioFiles: audioPaths,
+        imagesList, // Using public Supabase URLs directly
+        videoFiles: videoFiles_,
+        audioFiles: audioFiles_,
         aspectRatio: aspectRatio || "16:9",
         duration: dur,
         status: "PENDING",
@@ -172,14 +170,8 @@ async function getStatus(req, res, next) {
       status = "COMPLETED";
       outputUrls = result.outputs || result.output?.urls || [];
 
-      if (outputUrls.length > 0 && !videoPath) {
-        try {
-          const filename = await seedance.downloadVideo(outputUrls[0], requestId);
-          videoPath = filename;
-        } catch (dlErr) {
-          console.error("Video download failed:", dlErr.message);
-        }
-      }
+      // Instead of downloading to Render's ephemeral disk, we will just pass the outputUrls to the UI.
+      // The frontend can stream it directly from the Seedance/Cloudfront CDN safely!
     } else if (result.status === "failed") {
       status = "FAILED";
       error = result.error || "Generation failed";
@@ -250,10 +242,11 @@ async function retryGeneration(req, res, next) {
     if (!generation) return res.status(404).json({ error: "Generation not found" });
     if (generation.status !== "FAILED") return res.status(400).json({ error: "Only failed generations can be retried" });
 
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
-    const imagesList = (generation.imagesList || []).map((p) => `${baseUrl}${p}`);
-    const videoFiles = (generation.videoFiles || []).map((p) => `${baseUrl}${p}`);
-    const audioFiles = (generation.audioFiles || []).map((p) => `${baseUrl}${p}`);
+    // For retries we just use the URLs directly from the database 
+    // (since they are Supabase public URLs now!)
+    const imagesList = generation.imagesList || [];
+    const videoFiles = generation.videoFiles || [];
+    const audioFiles = generation.audioFiles || [];
 
     const apiResponse = await seedance.generateVideo({
       prompt: generation.prompt,
@@ -285,17 +278,8 @@ async function deleteGeneration(req, res, next) {
     const generation = await prisma.generation.findUnique({ where: { id: req.params.id } });
     if (!generation) return res.status(404).json({ error: "Generation not found" });
 
-    // Delete local video
-    if (generation.videoPath) {
-      const filepath = path.join(__dirname, "..", "videos", generation.videoPath);
-      if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
-    }
-
-    // Delete uploaded files
-    for (const p of [...(generation.imagesList || []), ...(generation.videoFiles || []), ...(generation.audioFiles || [])]) {
-      const filepath = path.join(__dirname, "..", p);
-      if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
-    }
+    // We skip deleting local uploaded files because they were uploaded to Supabase instead
+    // And Render disk resets anyway. To fully clean up, we would use Supabase Storage SDK to delete here.
 
     await prisma.generation.delete({ where: { id: generation.id } });
     res.json({ message: "Generation deleted successfully" });
