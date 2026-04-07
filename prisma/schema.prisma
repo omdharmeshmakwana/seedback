@@ -1,0 +1,35 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum GenerationStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model Generation {
+  id          String           @id @default(uuid())
+  requestId   String?          @map("request_id")
+  prompt      String
+  imagesList  Json             @default("[]") @map("images_list")
+  videoFiles  Json             @default("[]") @map("video_files")
+  audioFiles  Json             @default("[]") @map("audio_files")
+  aspectRatio String           @default("16:9") @map("aspect_ratio")
+  duration    Int              @default(5)
+  status      GenerationStatus @default(PENDING)
+  outputUrls  Json             @default("[]") @map("output_urls")
+  videoPath   String?          @map("video_path")
+  error       String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  @@map("generations")
+}
