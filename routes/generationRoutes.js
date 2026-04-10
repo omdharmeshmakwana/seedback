@@ -18,6 +18,9 @@ router.get("/generation/:id", ctrl.getGeneration);
 // Retry failed
 router.post("/retry/:id", ctrl.retryGeneration);
 
+// Rerun (duplicate and restart)
+router.post("/rerun/:id", ctrl.rerunGeneration);
+
 // Delete
 router.delete("/generation/:id", ctrl.deleteGeneration);
 
