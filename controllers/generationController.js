@@ -288,6 +288,48 @@ async function deleteGeneration(req, res, next) {
   }
 }
 
+/**
+ * POST /api/rerun/:id
+ */
+async function rerunGeneration(req, res, next) {
+  try {
+    const generation = await prisma.generation.findUnique({ where: { id: req.params.id } });
+    if (!generation) return res.status(404).json({ error: "Generation not found" });
+
+    const imagesList = generation.imagesList || [];
+    const videoFiles = generation.videoFiles || [];
+    const audioFiles = generation.audioFiles || [];
+
+    const apiResponse = await seedance.generateVideo({
+      prompt: generation.prompt,
+      imagesList,
+      videoFiles,
+      audioFiles,
+      aspectRatio: generation.aspectRatio,
+      duration: generation.duration,
+    });
+
+    const requestId = apiResponse.request_id || apiResponse.id || null;
+
+    const newGeneration = await prisma.generation.create({
+      data: {
+        requestId,
+        prompt: generation.prompt,
+        imagesList,
+        videoFiles,
+        audioFiles,
+        aspectRatio: generation.aspectRatio,
+        duration: generation.duration,
+        status: "PENDING",
+      },
+    });
+
+    res.status(201).json(newGeneration);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   createGeneration,
   getStatus,
@@ -295,4 +337,5 @@ module.exports = {
   getGeneration,
   retryGeneration,
   deleteGeneration,
+  rerunGeneration,
 };
